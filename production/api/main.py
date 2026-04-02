@@ -4,7 +4,16 @@ Handles all channel webhooks and REST endpoints
 """
 
 import logging
+import os
 from datetime import datetime
+
+from dotenv import load_dotenv
+# Try multiple paths to find .env
+load_dotenv('production/.env')  # when run from D:/Final-Hackathon-5
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.env"))  # absolute fallback
+
+import logging as _logging
+_logging.basicConfig(level=_logging.INFO, force=True)
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -138,7 +147,7 @@ async def shutdown():
 # ─────────────────────────────────────────────
 
 @app.post("/support/submit", response_model=SupportFormResponse)
-async def submit_support_form(submission: SupportFormSubmission):
+async def submit_support_form(submission: SupportFormSubmission, background_tasks: BackgroundTasks):
     """Handle web support form submission."""
     ticket_id = str(uuid.uuid4())
     message_data = {
@@ -157,11 +166,78 @@ async def submit_support_form(submission: SupportFormSubmission):
     except Exception as e:
         logger.warning(f"Kafka publish failed (continuing): {e}")
 
+    # Process with AI and send email reply in background
+    background_tasks.add_task(
+        process_and_reply,
+        submission.email,
+        submission.name,
+        submission.subject,
+        submission.message,
+        ticket_id
+    )
+
     return SupportFormResponse(
         ticket_id=ticket_id,
         message="Thank you! Our AI assistant will respond shortly.",
         estimated_response_time="Usually within 5 minutes"
     )
+
+
+async def process_and_reply(email: str, name: str, subject: str, message: str, ticket_id: str):
+    """Generate AI reply and send via Gmail."""
+    print(f"[process_and_reply] Starting for {email}, ticket {ticket_id}", flush=True)
+    logger.info(f"[process_and_reply] Starting for {email}, ticket {ticket_id}")
+    logger.info(f"[process_and_reply] gmail_handler={gmail_handler}, service={gmail_handler.service if gmail_handler else None}")
+    try:
+        import anthropic
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        logger.info(f"[process_and_reply] ANTHROPIC_API_KEY present: {bool(api_key)}")
+        ai_client = anthropic.Anthropic(api_key=api_key)
+
+        # Load context
+        context_dir = os.path.join(os.path.dirname(__file__), "../../context")
+        product_docs = open(os.path.join(context_dir, "product-docs.md"), encoding="utf-8").read()
+
+        # Generate AI response
+        logger.info(f"[process_and_reply] Calling Claude AI...")
+        response = ai_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=500,
+            messages=[{
+                "role": "user",
+                "content": f"""You are TechNova AI Support. Reply to this customer web form submission.
+
+Customer: {name}
+Subject: {subject}
+Message: {message}
+
+Product docs: {product_docs[:3000]}
+
+Write a helpful, professional email reply. Include ticket ID {ticket_id} at the end.
+Keep it under 200 words."""
+            }]
+        )
+
+        ai_reply = response.content[0].text
+        logger.info(f"[process_and_reply] AI reply generated ({len(ai_reply)} chars)")
+
+        # Send via Gmail - create fresh handler to ensure env vars are loaded
+        from production.channels.gmail_handler import GmailHandler
+        fresh_gmail = GmailHandler()
+        logger.info(f"[process_and_reply] Fresh gmail service: {fresh_gmail.service is not None}")
+        if fresh_gmail.service:
+            logger.info(f"[process_and_reply] Sending email to {email}...")
+            result = await fresh_gmail.send_reply(
+                to_email=email,
+                subject=f"Re: {subject} [Ticket: {ticket_id[:8]}]",
+                body=ai_reply
+            )
+            logger.info(f"[process_and_reply] Email sent! Result: {result}")
+        else:
+            logger.warning(f"[process_and_reply] Gmail not available - MOCK reply for {email}: {ai_reply[:100]}")
+
+    except Exception as e:
+        logger.error(f"[process_and_reply] FAILED: {e}", exc_info=True)
 
 
 @app.get("/support/ticket/{ticket_id}")

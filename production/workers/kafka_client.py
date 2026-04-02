@@ -14,9 +14,13 @@ except ImportError:
     KAFKA_AVAILABLE = False
     logging.warning("aiokafka not installed - Kafka disabled, running in direct mode")
 
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "../../production/.env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"))
+
 logger = logging.getLogger(__name__)
 
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:9092")
 
 # Topic definitions for all channels
 TOPICS = {

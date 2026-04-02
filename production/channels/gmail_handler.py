@@ -19,12 +19,20 @@ logger = logging.getLogger(__name__)
 
 class GmailHandler:
     def __init__(self):
-        creds_json = os.getenv("GMAIL_CREDENTIALS")
-        if creds_json:
-            import json as _json
-            creds_data = _json.loads(creds_json)
-            self.credentials = Credentials.from_authorized_user_info(creds_data)
-            self.service = build("gmail", "v1", credentials=self.credentials)
+        token_json = os.getenv("GMAIL_TOKEN")
+        if token_json:
+            try:
+                import json as _json
+                token_data = _json.loads(token_json)
+                self.credentials = Credentials.from_authorized_user_info(
+                    token_data,
+                    scopes=["https://www.googleapis.com/auth/gmail.modify"]
+                )
+                self.service = build("gmail", "v1", credentials=self.credentials)
+                logger.info("Gmail handler initialized with real credentials")
+            except Exception as e:
+                logger.warning(f"Gmail token invalid: {e} - running in mock mode")
+                self.service = None
         else:
             logger.warning("GMAIL_CREDENTIALS not set - Gmail handler in mock mode")
             self.service = None

@@ -15,7 +15,7 @@ const PRIORITIES = [
   { value: 'high',   label: 'High',   desc: 'Urgent issue',     dot: 'bg-rose-400' },
 ];
 
-export default function SupportForm({ apiEndpoint = '/api/support/submit' }) {
+export default function SupportForm({ apiEndpoint = 'http://localhost:8002/support/submit' }) {
   const [formData, setFormData] = useState({
     name: '', email: '', subject: '', category: 'general', priority: 'medium', message: '',
   });
