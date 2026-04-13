@@ -1,0 +1,8 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "production/Dockerfile"
+
+[deploy]
+startCommand = "python -m production.workers.message_processor"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
